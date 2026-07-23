@@ -51,11 +51,12 @@ body {
 }
 
 #board {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 1;
   display: block;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   touch-action: none;
   cursor: crosshair;
   background: #f3f6f9;

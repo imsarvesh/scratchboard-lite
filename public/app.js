@@ -83,9 +83,10 @@ function cloneStroke(stroke) {
 }
 
 function screenSize() {
+  const rect = canvas.getBoundingClientRect();
   return {
-    w: canvas.clientWidth || window.innerWidth,
-    h: canvas.clientHeight || window.innerHeight,
+    w: rect.width || canvas.clientWidth || window.innerWidth,
+    h: rect.height || canvas.clientHeight || window.innerHeight,
   };
 }
 
@@ -93,9 +94,18 @@ function screenToWorld(sx, sy) {
   return [(sx - panX) / zoom, (sy - panY) / zoom];
 }
 
+/** CSS-pixel → canvas-buffer scale (must match how the bitmap is displayed). */
+function bufferScale() {
+  const { w, h } = screenSize();
+  return {
+    x: w > 0 ? canvas.width / w : devicePixelRatio || 1,
+    y: h > 0 ? canvas.height / h : devicePixelRatio || 1,
+  };
+}
+
 function applyCamera() {
-  const dpr = devicePixelRatio;
-  ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * panX, dpr * panY);
+  const { x: sx, y: sy } = bufferScale();
+  ctx.setTransform(sx * zoom, 0, 0, sy * zoom, sx * panX, sy * panY);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   resetComposite();
@@ -230,8 +240,14 @@ function resetZoom() {
 }
 
 function resize() {
-  canvas.width = window.innerWidth * devicePixelRatio;
-  canvas.height = window.innerHeight * devicePixelRatio;
+  const { w, h } = screenSize();
+  const dpr = window.devicePixelRatio || 1;
+  const nextW = Math.max(1, Math.round(w * dpr));
+  const nextH = Math.max(1, Math.round(h * dpr));
+  if (canvas.width !== nextW || canvas.height !== nextH) {
+    canvas.width = nextW;
+    canvas.height = nextH;
+  }
   redrawAll();
 }
 
@@ -940,6 +956,8 @@ dockDragHandle?.addEventListener('pointerup', endDockDrag);
 dockDragHandle?.addEventListener('pointercancel', endDockDrag);
 
 window.addEventListener('resize', resize);
+window.visualViewport?.addEventListener('resize', resize);
+window.visualViewport?.addEventListener('scroll', resize);
 
 // Start centered at origin
 {
