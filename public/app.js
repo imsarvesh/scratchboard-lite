@@ -5,6 +5,7 @@ const liveStatus = document.getElementById('liveStatus');
 const clearBtn = document.getElementById('clearBtn');
 const dock = document.getElementById('dock');
 const dockPosBtn = document.getElementById('dockPosBtn');
+const dockDragHandle = document.getElementById('dockDragHandle');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
 const penBtn = document.getElementById('penBtn');
@@ -264,6 +265,12 @@ function currentDockPosition() {
 
 function setDockPosition(pos) {
   const next = DOCK_POSITIONS.includes(pos) ? pos : 'bottom';
+  dock.classList.remove('is-dragging');
+  dock.style.left = '';
+  dock.style.top = '';
+  dock.style.right = '';
+  dock.style.bottom = '';
+  dock.style.transform = '';
   for (const p of DOCK_POSITIONS) {
     dock.classList.toggle(`dock-${p}`, p === next);
   }
@@ -292,6 +299,73 @@ function loadDockPosition() {
     /* ignore */
   }
   setDockPosition(saved);
+}
+
+function nearestDockEdge(clientX, clientY) {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const distances = {
+    left: clientX,
+    right: w - clientX,
+    top: clientY,
+    bottom: h - clientY,
+  };
+  return Object.entries(distances).sort((a, b) => a[1] - b[1])[0][0];
+}
+
+let dockDragging = false;
+let dockDragPointerId = null;
+let dockDragOffsetX = 0;
+let dockDragOffsetY = 0;
+
+function startDockDrag(e) {
+  if (e.button != null && e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const rect = dock.getBoundingClientRect();
+  dockDragging = true;
+  dockDragPointerId = e.pointerId;
+  dockDragOffsetX = e.clientX - rect.left;
+  dockDragOffsetY = e.clientY - rect.top;
+  dock.classList.add('is-dragging');
+  for (const p of DOCK_POSITIONS) dock.classList.remove(`dock-${p}`);
+  dock.style.right = 'auto';
+  dock.style.bottom = 'auto';
+  dock.style.transform = 'none';
+  dock.style.left = `${rect.left}px`;
+  dock.style.top = `${rect.top}px`;
+  try {
+    dockDragHandle.setPointerCapture(e.pointerId);
+  } catch {
+    /* ignore */
+  }
+}
+
+function moveDockDrag(e) {
+  if (!dockDragging || e.pointerId !== dockDragPointerId) return;
+  e.preventDefault();
+  const rect = dock.getBoundingClientRect();
+  const maxX = Math.max(8, window.innerWidth - rect.width - 8);
+  const maxY = Math.max(8, window.innerHeight - rect.height - 8);
+  const nextLeft = Math.min(maxX, Math.max(8, e.clientX - dockDragOffsetX));
+  const nextTop = Math.min(maxY, Math.max(8, e.clientY - dockDragOffsetY));
+  dock.style.left = `${nextLeft}px`;
+  dock.style.top = `${nextTop}px`;
+}
+
+function endDockDrag(e) {
+  if (!dockDragging || (e.pointerId != null && e.pointerId !== dockDragPointerId)) return;
+  dockDragging = false;
+  dockDragPointerId = null;
+  try {
+    dockDragHandle.releasePointerCapture(e.pointerId);
+  } catch {
+    /* ignore */
+  }
+  const rect = dock.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  setDockPosition(nearestDockEdge(cx, cy));
 }
 
 function screenPos(e) {
@@ -740,6 +814,11 @@ dockPosBtn?.addEventListener('click', (e) => {
   e.stopPropagation();
   cycleDockPosition();
 });
+
+dockDragHandle?.addEventListener('pointerdown', startDockDrag);
+dockDragHandle?.addEventListener('pointermove', moveDockDrag);
+dockDragHandle?.addEventListener('pointerup', endDockDrag);
+dockDragHandle?.addEventListener('pointercancel', endDockDrag);
 
 window.addEventListener('resize', resize);
 

@@ -190,6 +190,27 @@ body {
   padding: 0.35rem 0;
 }
 
+.dock.is-dragging {
+  z-index: 20;
+  cursor: grabbing;
+  transition: none;
+  box-shadow: 0 22px 55px rgba(28, 36, 48, 0.22);
+  touch-action: none;
+}
+
+.dock-drag-handle {
+  cursor: grab;
+  color: var(--ink-soft);
+}
+
+.dock-drag-handle:hover {
+  color: var(--ink);
+}
+
+.dock.is-dragging .dock-drag-handle {
+  cursor: grabbing;
+}
+
 .dock-cluster {
   display: flex;
   gap: 0.25rem;

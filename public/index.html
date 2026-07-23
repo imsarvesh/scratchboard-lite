@@ -10,13 +10,31 @@
       href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/style.css?v=dockicons1" />
+    <link rel="stylesheet" href="/style.css?v=dockdrag1" />
   </head>
   <body>
     <div class="atmosphere" aria-hidden="true"></div>
     <canvas id="board"></canvas>
 
     <aside class="dock dock-bottom" id="dock" aria-label="Drawing tools">
+      <button
+        type="button"
+        id="dockDragHandle"
+        class="dock-btn dock-drag-handle"
+        title="Drag toolbar to an edge"
+        aria-label="Drag toolbar"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="9" cy="7" r="1.4" fill="currentColor" />
+          <circle cx="15" cy="7" r="1.4" fill="currentColor" />
+          <circle cx="9" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="15" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="9" cy="17" r="1.4" fill="currentColor" />
+          <circle cx="15" cy="17" r="1.4" fill="currentColor" />
+        </svg>
+      </button>
+      <div class="dock-divider" aria-hidden="true"></div>
+
       <div class="dock-cluster" role="group" aria-label="Tool">
         <button type="button" id="penBtn" class="dock-btn is-active" data-tool="pen" title="Pen">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -144,6 +162,6 @@
       </div>
     </aside>
 
-    <script type="module" src="/app.js?v=nozoomui1"></script>
+    <script type="module" src="/app.js?v=dockdrag1"></script>
   </body>
 </html>
