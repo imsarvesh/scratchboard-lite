@@ -234,19 +234,18 @@ function strokePolyline(buf, w, points, width, rgba) {
   }
 }
 
-/** Z-like calligraphic mark (fallback when no master PNG). */
+/** Single confident brush gesture (concept C). */
 function markPoints(size) {
   const anchors = [
-    [0.26, 0.36],
-    [0.34, 0.26],
-    [0.52, 0.28],
-    [0.6, 0.4],
-    [0.46, 0.56],
-    [0.28, 0.7],
-    [0.36, 0.8],
-    [0.56, 0.74],
-    [0.76, 0.56],
-    [0.82, 0.48],
+    [0.21, 0.68],
+    [0.28, 0.42],
+    [0.4, 0.26],
+    [0.55, 0.28],
+    [0.66, 0.4],
+    [0.7, 0.55],
+    [0.66, 0.66],
+    [0.74, 0.62],
+    [0.79, 0.6],
   ];
   const pts = [];
   for (let i = 0; i < anchors.length - 1; i++) {
@@ -274,25 +273,15 @@ function drawIcon(size, { pad = 0.08 } = {}) {
   const inner = size * (1 - pad * 2);
   const ox = size * pad;
   const pts = markPoints(inner).map(([x, y]) => [x + ox, y + ox]);
-  strokePolyline(buf, size, pts, inner * 0.07, INK);
+  strokePolyline(buf, size, pts, inner * 0.11, INK);
   const tip = pts[pts.length - 1];
-  fillCircle(buf, size, tip[0], tip[1], inner * 0.048, AMBER);
+  fillCircle(buf, size, tip[0], tip[1], inner * 0.075, AMBER);
   return buf;
 }
 
 function findMasterPng(iconsDir) {
-  const home = process.env.HOME || '';
-  const candidates = [
-    path.join(iconsDir, 'icon-master.png'),
-    path.join(
-      home,
-      '.cursor/projects/Users-sarvesh-Desktop-scratchboard-lite/assets/scratchboard-icon-master.png'
-    ),
-  ];
-  for (const p of candidates) {
-    if (p && fs.existsSync(p)) return p;
-  }
-  return null;
+  const local = path.join(iconsDir, 'icon-master.png');
+  return fs.existsSync(local) ? local : null;
 }
 
 export const ICON_TARGETS = [
@@ -303,27 +292,37 @@ export const ICON_TARGETS = [
   { name: 'icon-maskable-512.png', size: 512, pad: 0.18, maskable: true },
 ];
 
+/** Bump to force PNG regen on next ensurePwaIcons (server start / npm run icons). */
+export const ICON_REVISION = '3-brush';
+
 /** Write missing PNGs into iconsDir. Returns list of written filenames. */
 export function ensurePwaIcons(iconsDir, { force = false } = {}) {
   fs.mkdirSync(iconsDir, { recursive: true });
+  const revPath = path.join(iconsDir, '.icon-revision');
+  let stale = force;
+  try {
+    if (fs.readFileSync(revPath, 'utf8').trim() !== ICON_REVISION) stale = true;
+  } catch {
+    stale = true;
+  }
+
   const written = [];
   let master = null;
-  const masterPath = findMasterPng(iconsDir);
-  if (masterPath) {
-    try {
-      master = decodePng(fs.readFileSync(masterPath));
-      const localMaster = path.join(iconsDir, 'icon-master.png');
-      if (path.resolve(masterPath) !== path.resolve(localMaster)) {
-        fs.copyFileSync(masterPath, localMaster);
+  // On revision bump, redraw from procedural mark so an old master PNG cannot stick.
+  if (!stale) {
+    const masterPath = findMasterPng(iconsDir);
+    if (masterPath) {
+      try {
+        master = decodePng(fs.readFileSync(masterPath));
+      } catch {
+        master = null;
       }
-    } catch {
-      master = null;
     }
   }
 
   for (const { name, size, pad, maskable } of ICON_TARGETS) {
     const dest = path.join(iconsDir, name);
-    if (!force && fs.existsSync(dest) && fs.statSync(dest).size > 0) continue;
+    if (!stale && fs.existsSync(dest) && fs.statSync(dest).size > 0) continue;
 
     let rgba;
     if (master) {
@@ -338,5 +337,6 @@ export function ensurePwaIcons(iconsDir, { force = false } = {}) {
     fs.writeFileSync(dest, encodePng(size, size, rgba));
     written.push(name);
   }
+  fs.writeFileSync(revPath, ICON_REVISION);
   return written;
 }
