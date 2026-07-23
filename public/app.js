@@ -50,6 +50,11 @@ let panPointerId = null;
 let lastPanScreen = null;
 let drawPointerId = null;
 let usingPen = false;
+/** @type {Map<number, { x: number, y: number, type: string }>} */
+let activePointers = new Map();
+let pinching = false;
+let pinchLastDist = 0;
+let pinchLastMid = null;
 
 /** Camera: screen = world * zoom + pan */
 let zoom = 1;
@@ -172,12 +177,12 @@ function drawStrokePoints(points, tool = 'pen', color = DEFAULT_COLOR, width = D
 }
 
 function updateZoomLabel() {
-  /* zoom % UI removed; pinch / ctrl+scroll still works */
+  /* zoom % UI removed; pinch / wheel still work */
 }
 
 function updateCursor() {
-  canvas.classList.toggle('is-panning', panning);
-  canvas.classList.toggle('is-pan-ready', spaceDown && !panning && !drawing);
+  canvas.classList.toggle('is-panning', panning || pinching);
+  canvas.classList.toggle('is-pan-ready', spaceDown && !panning && !pinching && !drawing);
 }
 
 function redrawAll() {
@@ -387,6 +392,8 @@ function clearBoardLocal() {
   drawing = false;
   strokeId = null;
   lastPoint = null;
+  activePointers.clear();
+  endPinch();
   redrawAll();
 }
 
@@ -402,6 +409,8 @@ function applyHistory(strokes) {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
+  activePointers.clear();
+  endPinch();
   redrawAll();
 }
 
@@ -597,20 +606,114 @@ function shouldPan(e) {
   return e.button === 1 || (e.button === 0 && spaceDown);
 }
 
+function isMouseLikeWheel(e) {
+  // Line/page deltas are typical of mouse wheels.
+  if (e.deltaMode !== 0) return true;
+  // Discrete mouse notches often arrive as large pixel deltas with no X.
+  return Math.abs(e.deltaY) >= 40 && Math.abs(e.deltaX) < 1;
+}
+
+function touchPointerEntries() {
+  return [...activePointers.entries()].filter(([, p]) => p.type === 'touch');
+}
+
+function rememberPointer(e) {
+  const [x, y] = screenPos(e);
+  activePointers.set(e.pointerId, { x, y, type: e.pointerType });
+}
+
+function forgetPointer(pointerId) {
+  activePointers.delete(pointerId);
+}
+
+function clearPanGesture() {
+  panning = false;
+  panPointerId = null;
+  lastPanScreen = null;
+  updateCursor();
+}
+
+function finishCurrentStroke(releasePointerId = null) {
+  if (!drawing) return;
+  drawing = false;
+  flushMoves();
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  const finishedId = strokeId;
+  send({ type: 'stroke-end', id: finishedId });
+  commitStroke({
+    id: finishedId,
+    tool: currentStrokeTool,
+    color: currentStrokeColor,
+    size: currentStrokeSize,
+    width: currentStrokeWidth,
+    points: localStrokePoints,
+  });
+  localStrokePoints = [];
+  strokeId = null;
+  lastPoint = null;
+  drawPointerId = null;
+  usingPen = false;
+  if (releasePointerId != null) {
+    try {
+      canvas.releasePointerCapture(releasePointerId);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function beginPinch() {
+  const touches = touchPointerEntries().map(([, p]) => p);
+  if (touches.length < 2) return;
+  pinching = true;
+  const a = touches[0];
+  const b = touches[1];
+  pinchLastMid = [(a.x + b.x) / 2, (a.y + b.y) / 2];
+  pinchLastDist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  updateCursor();
+}
+
+function updatePinch() {
+  const touches = touchPointerEntries().map(([, p]) => p);
+  if (touches.length < 2 || !pinching) return;
+  const a = touches[0];
+  const b = touches[1];
+  const midX = (a.x + b.x) / 2;
+  const midY = (a.y + b.y) / 2;
+  const dist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const [prevX, prevY] = pinchLastMid;
+  panX += midX - prevX;
+  panY += midY - prevY;
+  const factor = dist / pinchLastDist;
+  pinchLastMid = [midX, midY];
+  pinchLastDist = dist;
+  setZoomAt(zoom * factor, midX, midY);
+}
+
+function endPinch() {
+  pinching = false;
+  pinchLastDist = 0;
+  pinchLastMid = null;
+  updateCursor();
+}
+
 canvas.addEventListener(
   'wheel',
   (e) => {
     e.preventDefault();
     const [sx, sy] = screenPos(e);
 
-    // Trackpad pinch (and ctrl+wheel) → zoom toward cursor
-    if (e.ctrlKey || e.metaKey) {
+    // Trackpad pinch, ctrl/cmd+wheel, or mouse wheel → zoom toward cursor
+    if (e.ctrlKey || e.metaKey || isMouseLikeWheel(e)) {
       const factor = Math.exp(-e.deltaY * 0.01);
       setZoomAt(zoom * factor, sx, sy);
       return;
     }
 
-    // Two-finger scroll → pan
+    // Trackpad two-finger scroll → pan
     panX -= e.deltaX;
     panY -= e.deltaY;
     redrawAll();
@@ -657,6 +760,23 @@ window.addEventListener('keyup', (e) => {
 });
 
 canvas.addEventListener('pointerdown', (e) => {
+  rememberPointer(e);
+
+  if (e.pointerType === 'touch' && touchPointerEntries().length >= 2) {
+    e.preventDefault();
+    if (drawing) finishCurrentStroke(null);
+    if (panning) clearPanGesture();
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    beginPinch();
+    return;
+  }
+
+  if (pinching) return;
+
   if (shouldPan(e)) {
     e.preventDefault();
     panning = true;
@@ -668,7 +788,6 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   if (e.button !== 0 || spaceDown) return;
-  // Ignore extra fingers while a stroke is already in progress
   if (drawing) return;
 
   e.preventDefault();
@@ -707,6 +826,16 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  if (activePointers.has(e.pointerId)) {
+    rememberPointer(e);
+  }
+
+  if (pinching) {
+    e.preventDefault();
+    updatePinch();
+    return;
+  }
+
   if (panning && e.pointerId === panPointerId) {
     e.preventDefault();
     const [sx, sy] = screenPos(e);
@@ -735,11 +864,24 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function endStroke(e) {
+  forgetPointer(e.pointerId);
+
+  if (pinching) {
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (touchPointerEntries().length < 2) {
+      endPinch();
+    } else {
+      beginPinch();
+    }
+    return;
+  }
+
   if (panning && e.pointerId === panPointerId) {
-    panning = false;
-    panPointerId = null;
-    lastPanScreen = null;
-    updateCursor();
+    clearPanGesture();
     try {
       canvas.releasePointerCapture(e.pointerId);
     } catch {
@@ -749,32 +891,7 @@ function endStroke(e) {
   }
 
   if (!drawing || (e.pointerId != null && e.pointerId !== drawPointerId)) return;
-  drawing = false;
-  flushMoves();
-  if (flushTimer) {
-    clearTimeout(flushTimer);
-    flushTimer = null;
-  }
-  const finishedId = strokeId;
-  send({ type: 'stroke-end', id: finishedId });
-  commitStroke({
-    id: finishedId,
-    tool: currentStrokeTool,
-    color: currentStrokeColor,
-    size: currentStrokeSize,
-    width: currentStrokeWidth,
-    points: localStrokePoints,
-  });
-  localStrokePoints = [];
-  strokeId = null;
-  lastPoint = null;
-  drawPointerId = null;
-  usingPen = false;
-  try {
-    canvas.releasePointerCapture(e.pointerId);
-  } catch {
-    /* ignore */
-  }
+  finishCurrentStroke(e.pointerId);
 }
 
 canvas.addEventListener('pointerup', endStroke);
