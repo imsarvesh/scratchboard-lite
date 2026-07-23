@@ -1,0 +1,61 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: #e8e4dc;
+  color: #1a1a1a;
+}
+
+.toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: rgba(232, 228, 220, 0.92);
+  border-bottom: 1px solid #c9c2b4;
+}
+
+.toolbar h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.status {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  margin-right: auto;
+}
+
+#clearBtn {
+  font: inherit;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #8a8274;
+  background: #f5f2eb;
+  cursor: pointer;
+}
+
+#clearBtn:hover {
+  background: #fff;
+}
+
+#board {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+  cursor: crosshair;
+  background: #faf8f4;
+}
