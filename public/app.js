@@ -3,13 +3,12 @@ const ctx = canvas.getContext('2d');
 const statusDot = document.getElementById('statusDot');
 const liveStatus = document.getElementById('liveStatus');
 const clearBtn = document.getElementById('clearBtn');
+const dock = document.getElementById('dock');
+const dockPosBtn = document.getElementById('dockPosBtn');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
 const penBtn = document.getElementById('penBtn');
 const eraserBtn = document.getElementById('eraserBtn');
-const zoomInBtn = document.getElementById('zoomInBtn');
-const zoomOutBtn = document.getElementById('zoomOutBtn');
-const zoomLabel = document.getElementById('zoomLabel');
 const colorGroup = document.getElementById('colorGroup');
 const colorSwatches = [...colorGroup.querySelectorAll('.color-swatch')];
 const sizeGroup = document.getElementById('sizeGroup');
@@ -22,6 +21,8 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 1.15;
 const GRID_GAP = 32;
+const DOCK_POSITIONS = ['bottom', 'left', 'top', 'right'];
+const DOCK_POS_KEY = 'scratchboard-dock-position';
 
 let ws = null;
 let reconnectDelay = 500;
@@ -168,7 +169,7 @@ function drawStrokePoints(points, tool = 'pen', color = DEFAULT_COLOR, width = D
 }
 
 function updateZoomLabel() {
-  zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+  /* zoom % UI removed; pinch / ctrl+scroll still works */
 }
 
 function updateCursor() {
@@ -255,6 +256,42 @@ function setActiveSize(size) {
   for (const swatch of sizeSwatches) {
     swatch.classList.toggle('is-active', Number(swatch.dataset.size) === activeSize);
   }
+}
+
+function currentDockPosition() {
+  return DOCK_POSITIONS.find((pos) => dock.classList.contains(`dock-${pos}`)) || 'bottom';
+}
+
+function setDockPosition(pos) {
+  const next = DOCK_POSITIONS.includes(pos) ? pos : 'bottom';
+  for (const p of DOCK_POSITIONS) {
+    dock.classList.toggle(`dock-${p}`, p === next);
+  }
+  try {
+    localStorage.setItem(DOCK_POS_KEY, next);
+  } catch {
+    /* ignore quota / private mode */
+  }
+  if (dockPosBtn) {
+    dockPosBtn.title = `Move toolbar — currently ${next} (cycles bottom → left → top → right)`;
+    dockPosBtn.setAttribute('aria-label', `Move toolbar, currently ${next}`);
+  }
+}
+
+function cycleDockPosition() {
+  const idx = DOCK_POSITIONS.indexOf(currentDockPosition());
+  const next = DOCK_POSITIONS[(idx + 1) % DOCK_POSITIONS.length];
+  setDockPosition(next);
+}
+
+function loadDockPosition() {
+  let saved = 'bottom';
+  try {
+    saved = localStorage.getItem(DOCK_POS_KEY) || 'bottom';
+  } catch {
+    /* ignore */
+  }
+  setDockPosition(saved);
 }
 
 function screenPos(e) {
@@ -683,10 +720,6 @@ for (const swatch of sizeSwatches) {
   });
 }
 
-zoomInBtn.addEventListener('click', () => zoomBy(ZOOM_STEP));
-zoomOutBtn.addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
-zoomLabel.addEventListener('click', () => resetZoom());
-
 undoBtn?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -702,6 +735,12 @@ clearBtn.addEventListener('click', () => {
   send({ type: 'clear' });
 });
 
+dockPosBtn?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  cycleDockPosition();
+});
+
 window.addEventListener('resize', resize);
 
 // Start centered at origin
@@ -710,5 +749,6 @@ window.addEventListener('resize', resize);
   panX = w / 2;
   panY = h / 2;
 }
+loadDockPosition();
 resize();
 connect();

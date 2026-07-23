@@ -53,7 +53,10 @@ const server = http.createServer((req, res) => {
       return;
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    });
     res.end(data);
   });
 });

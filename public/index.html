@@ -10,13 +10,13 @@
       href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/style.css?v=dockicons1" />
   </head>
   <body>
     <div class="atmosphere" aria-hidden="true"></div>
     <canvas id="board"></canvas>
 
-    <aside class="dock" aria-label="Drawing tools">
+    <aside class="dock dock-bottom" id="dock" aria-label="Drawing tools">
       <div class="dock-cluster" role="group" aria-label="Tool">
         <button type="button" id="penBtn" class="dock-btn is-active" data-tool="pen" title="Pen">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -68,14 +68,6 @@
 
       <div class="dock-divider" aria-hidden="true"></div>
 
-      <div class="zoom-group" role="group" aria-label="Zoom">
-        <button type="button" id="zoomOutBtn" class="dock-btn" title="Zoom out">−</button>
-        <button type="button" id="zoomLabel" class="zoom-label" title="Reset zoom">100%</button>
-        <button type="button" id="zoomInBtn" class="dock-btn" title="Zoom in">+</button>
-      </div>
-
-      <div class="dock-divider" aria-hidden="true"></div>
-
       <div class="dock-cluster" role="group" aria-label="History">
         <button type="button" id="undoBtn" class="dock-btn" title="Undo (Ctrl/⌘Z)">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -105,8 +97,46 @@
 
       <div class="dock-divider" aria-hidden="true"></div>
 
-      <button type="button" id="clearBtn" class="dock-btn dock-clear" title="Clear board">
-        Clear
+      <button type="button" id="clearBtn" class="dock-btn dock-clear" title="Clear board" aria-label="Clear board">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M5 7h14M9 7V5h6v2M8 7l1 12h6l1-12"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+
+      <div class="dock-divider" aria-hidden="true"></div>
+
+      <button
+        type="button"
+        id="dockPosBtn"
+        class="dock-btn"
+        title="Move toolbar (bottom → left → top → right)"
+        aria-label="Move toolbar"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect
+            x="3.5"
+            y="3.5"
+            width="17"
+            height="17"
+            rx="2.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+          />
+          <path
+            d="M8 8h3v3H8zM13 8h3v3h-3zM8 13h3v3H8zM13 13h3v3h-3z"
+            fill="currentColor"
+            opacity="0.35"
+          />
+          <path d="M8 8h3v3H8z" fill="currentColor" />
+        </svg>
       </button>
 
       <div class="live" id="liveStatus" title="Connection" role="status" aria-label="Connecting">
@@ -114,6 +144,6 @@
       </div>
     </aside>
 
-    <script type="module" src="/app.js?v=size1"></script>
+    <script type="module" src="/app.js?v=nozoomui1"></script>
   </body>
 </html>
