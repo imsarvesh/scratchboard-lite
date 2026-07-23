@@ -1,7 +1,7 @@
 # App Icon Refresh — Design
 
 **Date:** 2026-07-23  
-**Status:** Approved (concept C)
+**Status:** Approved (concept A)
 
 ## Goal
 
@@ -9,7 +9,7 @@ Replace the thin scribble app icon with a stronger, favicon-readable mark while 
 
 ## Decision
 
-**Concept C — single confident brush gesture.** Bold teal stroke on paper with amber tip circle. No board tile, monogram, or grid.
+**Concept A — bold free scribble**, using the **exact approved concept art** (`icon-concept-a.png`) as `icon-master.png` for all PNG sizes. SVG favicon/app icon paths are redrawn to match that mark (C-curve → arch → amber tip).
 
 ## Visual
 
@@ -19,14 +19,14 @@ Replace the thin scribble app icon with a stronger, favicon-readable mark while 
 | Ink | `#2a6f97` |
 | Tip | `#d68910` |
 
-Composition: one sweeping stroke with rounded caps; amber disc at the stroke end. Safe padding for maskable PNGs via existing `icons.js` pad settings.
+Source of truth for raster icons: the brainstorming concept A PNG, copied to `public/icons/icon-master.png` and resized by `ensurePwaIcons`.
 
 ## Deliverables
 
-- `public/icons/icon.svg` — master 512 SVG
-- `public/icons/favicon.svg` — 32px rounded variant
-- Regenerated PNGs via `npm run icons` / `ensurePwaIcons` (`icon-192`, `icon-512`, `icon-maskable-512`, `apple-touch-icon`, `favicon-32`)
-- `icons.js` procedural fallback (`markPoints` / stroke width) matches concept C
+- `public/icons/icon-master.png` — approved concept A art (source of truth)
+- `public/icons/icon.svg` / `favicon.svg` — reference the raster masters (no hand-traced path drift)
+- Regenerated PNGs via `node scripts/sync-concept-a-icon.mjs` or server start (`ensurePwaIcons`)
+- `ICON_REVISION` = `5-concept-a-master`
 
 ## Unchanged
 
