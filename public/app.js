@@ -6,6 +6,8 @@ const clearBtn = document.getElementById('clearBtn');
 const dock = document.getElementById('dock');
 const dockPosBtn = document.getElementById('dockPosBtn');
 const dockDragHandle = document.getElementById('dockDragHandle');
+const installBtn = document.getElementById('installBtn');
+const installDivider = document.querySelector('.dock-install-divider');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
 const penBtn = document.getElementById('penBtn');
@@ -831,3 +833,57 @@ window.addEventListener('resize', resize);
 loadDockPosition();
 resize();
 connect();
+setupPwa();
+
+function isStandaloneDisplay() {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: window-controls-overlay)').matches ||
+    // iOS Safari
+    (typeof navigator !== 'undefined' && navigator.standalone === true)
+  );
+}
+
+function setInstallVisible(visible) {
+  if (!installBtn) return;
+  installBtn.hidden = !visible;
+  if (installDivider) installDivider.hidden = !visible;
+}
+
+function setupPwa() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // App still works as a normal page without SW.
+    });
+  }
+
+  if (isStandaloneDisplay()) {
+    setInstallVisible(false);
+    return;
+  }
+
+  let deferredPrompt = null;
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredPrompt = event;
+    setInstallVisible(true);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    setInstallVisible(false);
+  });
+
+  installBtn?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const choice = await deferredPrompt.userChoice.catch(() => null);
+    deferredPrompt = null;
+    if (choice?.outcome === 'accepted') {
+      setInstallVisible(false);
+    }
+  });
+}

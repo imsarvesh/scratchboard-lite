@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js --watch",
+    "icons": "node scripts/render-icons.mjs",
     "test": "node --test"
   },
   "engines": {

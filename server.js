@@ -4,16 +4,27 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Board } from './board.js';
+import { ensurePwaIcons } from './icons.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const ICONS_DIR = path.join(PUBLIC_DIR, 'icons');
 const PORT = Number(process.env.PORT) || 3000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
 };
+
+const writtenIcons = ensurePwaIcons(ICONS_DIR);
+if (writtenIcons.length) {
+  console.log(`Generated PWA icons: ${writtenIcons.join(', ')}`);
+}
 
 const board = new Board();
 
