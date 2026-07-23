@@ -941,6 +941,7 @@ redoBtn?.addEventListener('click', (e) => {
 });
 
 clearBtn.addEventListener('click', () => {
+  if (!window.confirm('Clear the board for everyone?')) return;
   send({ type: 'clear' });
 });
 
