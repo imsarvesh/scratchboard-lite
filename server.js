@@ -60,6 +60,13 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server });
 
+function broadcastAll(wss, obj) {
+  const data = JSON.stringify(obj);
+  for (const client of wss.clients) {
+    if (client.readyState === 1) client.send(data);
+  }
+}
+
 wss.on('connection', (ws) => {
   sendJson(ws, board.getInitMessage());
 
@@ -74,7 +81,14 @@ wss.on('connection', (ws) => {
 
     switch (msg.type) {
       case 'stroke-start': {
-        const ok = board.strokeStart({ id: msg.id, x: msg.x, y: msg.y });
+        const ok = board.strokeStart({
+          id: msg.id,
+          x: msg.x,
+          y: msg.y,
+          tool: msg.tool,
+          color: msg.color,
+          size: msg.size,
+        });
         if (ok) broadcast(wss, JSON.stringify(msg), { except: ws });
         break;
       }
@@ -89,8 +103,21 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'clear': {
-        board.clear();
-        broadcast(wss, JSON.stringify({ type: 'clear' }), { includeSender: true });
+        if (board.clear()) {
+          broadcastAll(wss, { type: 'clear' });
+        }
+        break;
+      }
+      case 'undo': {
+        if (board.undo()) {
+          broadcastAll(wss, board.getHistoryMessage());
+        }
+        break;
+      }
+      case 'redo': {
+        if (board.redo()) {
+          broadcastAll(wss, board.getHistoryMessage());
+        }
         break;
       }
       default:
