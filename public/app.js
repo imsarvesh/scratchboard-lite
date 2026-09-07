@@ -78,6 +78,8 @@ let activePointers = new Map();
 let pinching = false;
 let pinchLastDist = 0;
 let pinchLastMid = null;
+/** @type {object[]} */
+let pendingImageMessages = [];
 
 /** Camera: screen = world * zoom + pan */
 let zoom = 1;
@@ -528,9 +530,38 @@ function applyHistory(strokes, images) {
 }
 
 function send(obj) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (obj && typeof obj.type === 'string' && obj.type.startsWith('image-')) {
+      pendingImageMessages.push(obj);
+    }
+    return false;
+  }
   ws.send(JSON.stringify(obj));
   return true;
+}
+
+function flushPendingImageMessages() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || pendingImageMessages.length === 0) {
+    return;
+  }
+  const queued = pendingImageMessages;
+  pendingImageMessages = [];
+  for (const msg of queued) {
+    if (msg.type === 'image-add' && !boardImages.has(msg.id)) {
+      boardImages.set(
+        msg.id,
+        cloneImage({
+          id: msg.id,
+          src: msg.src,
+          x: msg.x,
+          y: msg.y,
+          w: msg.w,
+          h: msg.h,
+        }),
+      );
+    }
+    ws.send(JSON.stringify(msg));
+  }
 }
 
 function requestUndo() {
@@ -611,6 +642,7 @@ function handleRemote(msg) {
       remoteStrokes.clear();
       localStrokePoints = [];
       imageGesture = null;
+      flushPendingImageMessages();
       redrawAll();
       break;
     case 'stroke-start': {
@@ -1213,12 +1245,24 @@ window.addEventListener('blur', () => {
 });
 
 window.addEventListener('paste', (e) => {
-  const items = e.clipboardData?.items;
-  if (!items) return;
-  for (const item of items) {
+  const data = e.clipboardData;
+  if (!data) return;
+
+  const fromItems = data.items ? [...data.items] : [];
+  for (const item of fromItems) {
     if (!item.type.startsWith('image/')) continue;
     const file = item.getAsFile();
     if (!file) continue;
+    e.preventDefault();
+    pasteClipboardImage(file).catch(() => {
+      /* ignore bad clipboard payloads */
+    });
+    return;
+  }
+
+  const fromFiles = data.files ? [...data.files] : [];
+  for (const file of fromFiles) {
+    if (!file.type.startsWith('image/')) continue;
     e.preventDefault();
     pasteClipboardImage(file).catch(() => {
       /* ignore bad clipboard payloads */
