@@ -7,12 +7,19 @@ import {
   hitTestImage,
   resizeFromHandle,
 } from './image-geom.js';
+import {
+  computeContentBounds,
+  fitExportSize,
+  exportFilename,
+  renderExportLayers,
+} from './export-png.js';
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const statusDot = document.getElementById('statusDot');
 const liveStatus = document.getElementById('liveStatus');
 const clearBtn = document.getElementById('clearBtn');
+const saveBtn = document.getElementById('saveBtn');
 const dock = document.getElementById('dock');
 const dockPosBtn = document.getElementById('dockPosBtn');
 const dockDragHandle = document.getElementById('dockDragHandle');
@@ -1010,6 +1017,99 @@ async function pasteClipboardImage(file) {
   redrawAll();
 }
 
+function gatherExportStrokes() {
+  const strokes = strokeHistory.map(cloneStroke);
+  for (const entry of remoteStrokes.values()) {
+    strokes.push(cloneStroke(entry));
+  }
+  if (drawing && localStrokePoints.length) {
+    strokes.push({
+      id: strokeId || 'local-in-progress',
+      tool: currentStrokeTool,
+      color: currentStrokeColor,
+      size: currentStrokeSize,
+      width: currentStrokeWidth,
+      points: localStrokePoints.map((p) => [p[0], p[1]]),
+    });
+  }
+  return strokes;
+}
+
+function drawStrokesOnExportCtx(exportCtx, strokes) {
+  exportCtx.lineCap = 'round';
+  exportCtx.lineJoin = 'round';
+  for (const s of strokes) {
+    const tool = s.tool || 'pen';
+    const color = s.color || DEFAULT_COLOR;
+    const width = s.width ?? DEFAULT_SIZE;
+    const points = s.points || [];
+
+    if (tool === 'eraser') {
+      exportCtx.globalCompositeOperation = 'destination-out';
+      exportCtx.strokeStyle = 'rgba(0,0,0,1)';
+      exportCtx.fillStyle = 'rgba(0,0,0,1)';
+    } else {
+      exportCtx.globalCompositeOperation = 'source-over';
+      exportCtx.strokeStyle = color;
+      exportCtx.fillStyle = color;
+    }
+    exportCtx.lineWidth = width;
+
+    if (points.length < 2) {
+      if (points.length === 1) {
+        exportCtx.beginPath();
+        exportCtx.arc(points[0][0], points[0][1], width / 2, 0, Math.PI * 2);
+        exportCtx.fill();
+      }
+    } else {
+      exportCtx.beginPath();
+      exportCtx.moveTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) {
+        exportCtx.lineTo(points[i][0], points[i][1]);
+      }
+      exportCtx.stroke();
+    }
+    exportCtx.globalCompositeOperation = 'source-over';
+  }
+}
+
+function saveBoardAsPng() {
+  const strokes = gatherExportStrokes();
+  const bounds = computeContentBounds(strokes);
+  if (!bounds) {
+    window.alert('Nothing usable to save — draw a valid stroke first.');
+    return;
+  }
+
+  const fitted = fitExportSize(bounds.width, bounds.height);
+  if (!fitted) {
+    window.alert('Could not save PNG because the drawing dimensions are invalid.');
+    return;
+  }
+  const offscreen = renderExportLayers(bounds, fitted, (inkCtx) => {
+    drawStrokesOnExportCtx(inkCtx, strokes);
+  });
+  if (!offscreen) {
+    window.alert('Could not create export canvas.');
+    return;
+  }
+
+  offscreen.toBlob((blob) => {
+    if (!blob) {
+      window.alert('Could not create PNG.');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportFilename();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, 'image/png');
+}
+
 canvas.addEventListener(
   'wheel',
   (e) => {
@@ -1292,6 +1392,12 @@ redoBtn?.addEventListener('click', (e) => {
 clearBtn.addEventListener('click', () => {
   if (!window.confirm('Clear the board for everyone?')) return;
   send({ type: 'clear' });
+});
+
+saveBtn?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  saveBoardAsPng();
 });
 
 dockPosBtn?.addEventListener('click', (e) => {
