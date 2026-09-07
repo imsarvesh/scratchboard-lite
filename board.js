@@ -39,10 +39,41 @@ function cloneStrokeList(strokes) {
   return strokes.map(cloneStroke);
 }
 
+function cloneImage(image) {
+  return {
+    id: image.id,
+    src: image.src,
+    x: image.x,
+    y: image.y,
+    w: image.w,
+    h: image.h,
+  };
+}
+
+function cloneImageList(images) {
+  return images.map(cloneImage);
+}
+
+function isValidImageSrc(src) {
+  return typeof src === 'string' && src.startsWith('data:image/');
+}
+
+function isValidGeometry({ x, y, w, h }) {
+  return (
+    isFiniteNumber(x) &&
+    isFiniteNumber(y) &&
+    isFiniteNumber(w) &&
+    isFiniteNumber(h) &&
+    w > 0 &&
+    h > 0
+  );
+}
+
 export class Board {
   constructor() {
     this.completed = [];
     this.inProgress = new Map();
+    this.images = new Map();
     this.undoStack = [];
     this.redoStack = [];
   }
@@ -51,12 +82,24 @@ export class Board {
     return cloneStrokeList(this.completed);
   }
 
+  getImages() {
+    return cloneImageList([...this.images.values()]);
+  }
+
   getInitMessage() {
-    return { type: 'init', strokes: this.getCompletedStrokes() };
+    return {
+      type: 'init',
+      strokes: this.getCompletedStrokes(),
+      images: this.getImages(),
+    };
   }
 
   getHistoryMessage() {
-    return { type: 'history', strokes: this.getCompletedStrokes() };
+    return {
+      type: 'history',
+      strokes: this.getCompletedStrokes(),
+      images: this.getImages(),
+    };
   }
 
   pushUndo(action) {
@@ -110,11 +153,59 @@ export class Board {
     return true;
   }
 
+  imageAdd({ id, src, x, y, w, h }) {
+    if (typeof id !== 'string' || id.length === 0) return false;
+    if (this.images.has(id)) return false;
+    if (!isValidImageSrc(src)) return false;
+    if (!isValidGeometry({ x, y, w, h })) return false;
+
+    const image = cloneImage({ id, src, x, y, w, h });
+    this.images.set(id, image);
+    this.pushUndo({ type: 'image-add', image: cloneImage(image) });
+    return true;
+  }
+
+  imageUpdate({ id, x, y, w, h }) {
+    if (typeof id !== 'string' || id.length === 0) return false;
+    if (!isValidGeometry({ x, y, w, h })) return false;
+    const existing = this.images.get(id);
+    if (!existing) return false;
+
+    const before = cloneImage(existing);
+    existing.x = x;
+    existing.y = y;
+    existing.w = w;
+    existing.h = h;
+    const after = cloneImage(existing);
+    this.pushUndo({ type: 'image-update', id, before, after });
+    return true;
+  }
+
+  imageRemove({ id }) {
+    if (typeof id !== 'string' || id.length === 0) return false;
+    const existing = this.images.get(id);
+    if (!existing) return false;
+    this.images.delete(id);
+    this.pushUndo({ type: 'image-remove', image: cloneImage(existing) });
+    return true;
+  }
+
   clear() {
-    if (this.completed.length === 0 && this.inProgress.size === 0) return false;
-    this.pushUndo({ type: 'clear', strokes: this.getCompletedStrokes() });
+    if (
+      this.completed.length === 0 &&
+      this.inProgress.size === 0 &&
+      this.images.size === 0
+    ) {
+      return false;
+    }
+    this.pushUndo({
+      type: 'clear',
+      strokes: this.getCompletedStrokes(),
+      images: this.getImages(),
+    });
     this.completed = [];
     this.inProgress.clear();
+    this.images.clear();
     return true;
   }
 
@@ -129,8 +220,29 @@ export class Board {
       return true;
     }
 
+    if (action.type === 'image-add') {
+      this.images.delete(action.image.id);
+      this.redoStack.push(action);
+      return true;
+    }
+
+    if (action.type === 'image-update') {
+      this.images.set(action.id, cloneImage(action.before));
+      this.redoStack.push(action);
+      return true;
+    }
+
+    if (action.type === 'image-remove') {
+      this.images.set(action.image.id, cloneImage(action.image));
+      this.redoStack.push(action);
+      return true;
+    }
+
     if (action.type === 'clear') {
       this.completed = cloneStrokeList(action.strokes);
+      this.images = new Map(
+        (action.images || []).map((img) => [img.id, cloneImage(img)]),
+      );
       this.redoStack.push({ type: 'clear' });
       return true;
     }
@@ -149,10 +261,45 @@ export class Board {
       return true;
     }
 
+    if (action.type === 'image-add') {
+      this.images.set(action.image.id, cloneImage(action.image));
+      this.pushUndoKeepRedo({
+        type: 'image-add',
+        image: cloneImage(action.image),
+      });
+      return true;
+    }
+
+    if (action.type === 'image-update') {
+      this.images.set(action.id, cloneImage(action.after));
+      this.pushUndoKeepRedo({
+        type: 'image-update',
+        id: action.id,
+        before: cloneImage(action.before),
+        after: cloneImage(action.after),
+      });
+      return true;
+    }
+
+    if (action.type === 'image-remove') {
+      this.images.delete(action.image.id);
+      this.pushUndoKeepRedo({
+        type: 'image-remove',
+        image: cloneImage(action.image),
+      });
+      return true;
+    }
+
     if (action.type === 'clear') {
-      const before = this.getCompletedStrokes();
+      const beforeStrokes = this.getCompletedStrokes();
+      const beforeImages = this.getImages();
       this.completed = [];
-      this.pushUndoKeepRedo({ type: 'clear', strokes: before });
+      this.images.clear();
+      this.pushUndoKeepRedo({
+        type: 'clear',
+        strokes: beforeStrokes,
+        images: beforeImages,
+      });
       return true;
     }
 

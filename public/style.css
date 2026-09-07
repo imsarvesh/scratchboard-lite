@@ -72,6 +72,10 @@ body {
   cursor: grab;
 }
 
+#board.is-image-mode {
+  cursor: default;
+}
+
 .zoom-group {
   display: flex;
   align-items: center;

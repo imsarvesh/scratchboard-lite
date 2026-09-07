@@ -134,6 +134,34 @@ wss.on('connection', (ws) => {
         }
         break;
       }
+      case 'image-add': {
+        const ok = board.imageAdd({
+          id: msg.id,
+          src: msg.src,
+          x: msg.x,
+          y: msg.y,
+          w: msg.w,
+          h: msg.h,
+        });
+        if (ok) broadcast(wss, JSON.stringify(msg), { except: ws });
+        break;
+      }
+      case 'image-update': {
+        const ok = board.imageUpdate({
+          id: msg.id,
+          x: msg.x,
+          y: msg.y,
+          w: msg.w,
+          h: msg.h,
+        });
+        if (ok) broadcast(wss, JSON.stringify(msg), { except: ws });
+        break;
+      }
+      case 'image-remove': {
+        const ok = board.imageRemove({ id: msg.id });
+        if (ok) broadcast(wss, JSON.stringify(msg), { except: ws });
+        break;
+      }
       default:
         break;
     }

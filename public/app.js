@@ -1,3 +1,13 @@
+import {
+  HANDLE_HIT,
+  IMAGE_MIN_SIDE,
+  cloneImage,
+  fitPasteSize,
+  hitTestHandle,
+  hitTestImage,
+  resizeFromHandle,
+} from './image-geom.js';
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const statusDot = document.getElementById('statusDot');
@@ -32,6 +42,7 @@ let reconnectDelay = 500;
 let drawing = false;
 let panning = false;
 let spaceDown = false;
+let altDown = false;
 let strokeId = null;
 let activeTool = 'pen';
 let activeColor = DEFAULT_COLOR;
@@ -45,6 +56,13 @@ let flushTimer = null;
 let remoteStrokes = new Map();
 let localStrokePoints = [];
 let strokeHistory = [];
+/** @type {Map<string, { id: string, src: string, x: number, y: number, w: number, h: number }>} */
+let boardImages = new Map();
+/** @type {Map<string, HTMLImageElement>} */
+let imageElements = new Map();
+let selectedImageId = null;
+/** @type {null | { mode: 'move' | 'resize', id: string, handle?: string, pointerId: number, origin: object, grabDx: number, grabDy: number }} */
+let imageGesture = null;
 let lastPoint = null;
 let panPointerId = null;
 let lastPanScreen = null;
@@ -193,12 +211,75 @@ function updateZoomLabel() {
 function updateCursor() {
   canvas.classList.toggle('is-panning', panning || pinching);
   canvas.classList.toggle('is-pan-ready', spaceDown && !panning && !pinching && !drawing);
+  const imageMode = altDown || imageGesture;
+  canvas.classList.toggle('is-image-mode', Boolean(imageMode));
+}
+
+function ensureImageElement(image) {
+  let el = imageElements.get(image.id);
+  if (el && el.dataset.src === image.src) return el;
+  el = new Image();
+  el.decoding = 'async';
+  el.dataset.src = image.src;
+  el.onload = () => redrawAll();
+  el.src = image.src;
+  imageElements.set(image.id, el);
+  return el;
+}
+
+function pruneImageElements() {
+  for (const id of [...imageElements.keys()]) {
+    if (!boardImages.has(id)) imageElements.delete(id);
+  }
+}
+
+function applyImages(images) {
+  boardImages = new Map(
+    (images || []).map((img) => [img.id, cloneImage(img)]),
+  );
+  if (selectedImageId && !boardImages.has(selectedImageId)) {
+    selectedImageId = null;
+  }
+  pruneImageElements();
+}
+
+function drawBoardImage(image) {
+  const el = ensureImageElement(image);
+  if (!el.complete || el.naturalWidth === 0) return;
+  ctx.drawImage(el, image.x, image.y, image.w, image.h);
+}
+
+function drawSelectionChrome(image) {
+  const hs = HANDLE_HIT / zoom;
+  const lw = 1.5 / zoom;
+  ctx.save();
+  resetComposite();
+  ctx.strokeStyle = '#2a6f97';
+  ctx.fillStyle = '#ffffff';
+  ctx.lineWidth = lw;
+  ctx.setLineDash([6 / zoom, 4 / zoom]);
+  ctx.strokeRect(image.x, image.y, image.w, image.h);
+  ctx.setLineDash([]);
+  const corners = [
+    [image.x, image.y],
+    [image.x + image.w, image.y],
+    [image.x, image.y + image.h],
+    [image.x + image.w, image.y + image.h],
+  ];
+  for (const [cx, cy] of corners) {
+    ctx.fillRect(cx - hs / 2, cy - hs / 2, hs, hs);
+    ctx.strokeRect(cx - hs / 2, cy - hs / 2, hs, hs);
+  }
+  ctx.restore();
 }
 
 function redrawAll() {
   wipePixels();
   applyCamera();
   drawGrid();
+  for (const image of boardImages.values()) {
+    drawBoardImage(image);
+  }
   for (const s of strokeHistory) {
     drawStrokePoints(s.points, s.tool, s.color, s.width);
   }
@@ -213,7 +294,12 @@ function redrawAll() {
       currentStrokeWidth,
     );
   }
+  if (selectedImageId && (altDown || imageGesture)) {
+    const selected = boardImages.get(selectedImageId);
+    if (selected) drawSelectionChrome(selected);
+  }
   updateZoomLabel();
+  updateCursor();
 }
 
 function setZoomAt(nextZoom, screenX, screenY) {
@@ -403,6 +489,10 @@ function worldPos(e) {
 
 function clearBoardLocal() {
   strokeHistory = [];
+  boardImages = new Map();
+  imageElements.clear();
+  selectedImageId = null;
+  imageGesture = null;
   remoteStrokes.clear();
   localStrokePoints = [];
   drawing = false;
@@ -413,14 +503,16 @@ function clearBoardLocal() {
   redrawAll();
 }
 
-function applyHistory(strokes) {
+function applyHistory(strokes, images) {
   strokeHistory = (strokes || []).map(cloneStroke);
+  applyImages(images);
   remoteStrokes.clear();
   localStrokePoints = [];
   drawing = false;
   strokeId = null;
   lastPoint = null;
   pendingPoints = [];
+  imageGesture = null;
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
@@ -446,6 +538,7 @@ function requestUndo() {
     drawPointerId = null;
     usingPen = false;
   }
+  imageGesture = null;
   send({ type: 'undo' });
 }
 
@@ -509,8 +602,10 @@ function handleRemote(msg) {
   switch (msg.type) {
     case 'init':
       strokeHistory = (msg.strokes || []).map(cloneStroke);
+      applyImages(msg.images);
       remoteStrokes.clear();
       localStrokePoints = [];
+      imageGesture = null;
       redrawAll();
       break;
     case 'stroke-start': {
@@ -581,11 +676,46 @@ function handleRemote(msg) {
       }
       break;
     }
+    case 'image-add': {
+      if (typeof msg.id !== 'string' || boardImages.has(msg.id)) break;
+      boardImages.set(
+        msg.id,
+        cloneImage({
+          id: msg.id,
+          src: msg.src,
+          x: msg.x,
+          y: msg.y,
+          w: msg.w,
+          h: msg.h,
+        }),
+      );
+      redrawAll();
+      break;
+    }
+    case 'image-update': {
+      const existing = boardImages.get(msg.id);
+      if (!existing) break;
+      existing.x = msg.x;
+      existing.y = msg.y;
+      existing.w = msg.w;
+      existing.h = msg.h;
+      redrawAll();
+      break;
+    }
+    case 'image-remove': {
+      if (!boardImages.has(msg.id)) break;
+      boardImages.delete(msg.id);
+      imageElements.delete(msg.id);
+      if (selectedImageId === msg.id) selectedImageId = null;
+      if (imageGesture?.id === msg.id) imageGesture = null;
+      redrawAll();
+      break;
+    }
     case 'clear':
       clearBoardLocal();
       break;
     case 'history':
-      applyHistory(msg.strokes);
+      applyHistory(msg.strokes, msg.images);
       break;
     default:
       break;
@@ -716,6 +846,170 @@ function endPinch() {
   updateCursor();
 }
 
+function worldHandleHit() {
+  return HANDLE_HIT / zoom;
+}
+
+function beginImageGesture(e, mode, image, handle = null) {
+  const [wx, wy] = eventWorldPos(e);
+  imageGesture = {
+    mode,
+    id: image.id,
+    handle: handle || undefined,
+    pointerId: e.pointerId,
+    origin: cloneImage(image),
+    grabDx: wx - image.x,
+    grabDy: wy - image.y,
+  };
+  selectedImageId = image.id;
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch {
+    /* ignore */
+  }
+  redrawAll();
+}
+
+function updateImageGesture(e) {
+  if (!imageGesture || e.pointerId !== imageGesture.pointerId) return false;
+  const image = boardImages.get(imageGesture.id);
+  if (!image) return false;
+  const [wx, wy] = eventWorldPos(e);
+  if (imageGesture.mode === 'move') {
+    image.x = wx - imageGesture.grabDx;
+    image.y = wy - imageGesture.grabDy;
+  } else if (imageGesture.mode === 'resize' && imageGesture.handle) {
+    const next = resizeFromHandle(
+      imageGesture.origin,
+      imageGesture.handle,
+      wx,
+      wy,
+      IMAGE_MIN_SIDE,
+    );
+    image.x = next.x;
+    image.y = next.y;
+    image.w = next.w;
+    image.h = next.h;
+  }
+  redrawAll();
+  return true;
+}
+
+function endImageGesture(e) {
+  if (!imageGesture || (e.pointerId != null && e.pointerId !== imageGesture.pointerId)) {
+    return false;
+  }
+  const image = boardImages.get(imageGesture.id);
+  const origin = imageGesture.origin;
+  const pointerId = imageGesture.pointerId;
+  imageGesture = null;
+  try {
+    canvas.releasePointerCapture(pointerId);
+  } catch {
+    /* ignore */
+  }
+  if (
+    image &&
+    (image.x !== origin.x ||
+      image.y !== origin.y ||
+      image.w !== origin.w ||
+      image.h !== origin.h)
+  ) {
+    send({
+      type: 'image-update',
+      id: image.id,
+      x: image.x,
+      y: image.y,
+      w: image.w,
+      h: image.h,
+    });
+  }
+  redrawAll();
+  return true;
+}
+
+function tryStartImageInteraction(e) {
+  if (!(e.altKey || altDown)) return false;
+  if (e.button !== 0 || spaceDown) return false;
+  e.preventDefault();
+  const [wx, wy] = eventWorldPos(e);
+  const selected = selectedImageId ? boardImages.get(selectedImageId) : null;
+  if (selected) {
+    const handle = hitTestHandle(selected, wx, wy, worldHandleHit());
+    if (handle) {
+      beginImageGesture(e, 'resize', selected, handle);
+      return true;
+    }
+  }
+  const hit = hitTestImage([...boardImages.values()], wx, wy);
+  if (hit) {
+    beginImageGesture(e, 'move', hit);
+    return true;
+  }
+  selectedImageId = null;
+  redrawAll();
+  return true;
+}
+
+function removeSelectedImage() {
+  if (!selectedImageId) return;
+  const id = selectedImageId;
+  if (!boardImages.has(id)) return;
+  boardImages.delete(id);
+  imageElements.delete(id);
+  selectedImageId = null;
+  imageGesture = null;
+  send({ type: 'image-remove', id });
+  redrawAll();
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageNaturalSize(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+    img.onerror = () => reject(new Error('image load failed'));
+    img.src = src;
+  });
+}
+
+async function pasteClipboardImage(file) {
+  const src = await readFileAsDataURL(file);
+  if (!src.startsWith('data:image/')) return;
+  const natural = await loadImageNaturalSize(src);
+  const size = fitPasteSize(natural.w, natural.h);
+  const { w: vw, h: vh } = screenSize();
+  const [cx, cy] = screenToWorld(vw / 2, vh / 2);
+  const image = {
+    id: crypto.randomUUID(),
+    src,
+    x: cx - size.w / 2,
+    y: cy - size.h / 2,
+    w: size.w,
+    h: size.h,
+  };
+  boardImages.set(image.id, cloneImage(image));
+  selectedImageId = image.id;
+  send({
+    type: 'image-add',
+    id: image.id,
+    src: image.src,
+    x: image.x,
+    y: image.y,
+    w: image.w,
+    h: image.h,
+  });
+  redrawAll();
+}
+
 canvas.addEventListener(
   'wheel',
   (e) => {
@@ -740,10 +1034,30 @@ canvas.addEventListener(
 window.addEventListener(
   'keydown',
   (e) => {
+    if (e.key === 'Alt') {
+      altDown = true;
+      updateCursor();
+      if (selectedImageId) redrawAll();
+    }
+
     if (e.code === 'Space' && !e.repeat) {
       e.preventDefault();
       spaceDown = true;
       updateCursor();
+      return;
+    }
+
+    if (
+      (e.code === 'Delete' || e.code === 'Backspace') &&
+      selectedImageId &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey
+    ) {
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      e.preventDefault();
+      removeSelectedImage();
       return;
     }
 
@@ -769,9 +1083,34 @@ window.addEventListener(
 );
 
 window.addEventListener('keyup', (e) => {
+  if (e.key === 'Alt') {
+    altDown = false;
+    updateCursor();
+    redrawAll();
+  }
   if (e.code === 'Space') {
     spaceDown = false;
     updateCursor();
+  }
+});
+
+window.addEventListener('blur', () => {
+  altDown = false;
+  updateCursor();
+});
+
+window.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (!item.type.startsWith('image/')) continue;
+    const file = item.getAsFile();
+    if (!file) continue;
+    e.preventDefault();
+    pasteClipboardImage(file).catch(() => {
+      /* ignore bad clipboard payloads */
+    });
+    return;
   }
 });
 
@@ -781,6 +1120,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch' && touchPointerEntries().length >= 2) {
     e.preventDefault();
     if (drawing) finishCurrentStroke(null);
+    if (imageGesture) endImageGesture(e);
     if (panning) clearPanGesture();
     try {
       canvas.setPointerCapture(e.pointerId);
@@ -802,6 +1142,8 @@ canvas.addEventListener('pointerdown', (e) => {
     updateCursor();
     return;
   }
+
+  if (tryStartImageInteraction(e)) return;
 
   if (e.button !== 0 || spaceDown) return;
   if (drawing) return;
@@ -852,6 +1194,11 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
 
+  if (updateImageGesture(e)) {
+    e.preventDefault();
+    return;
+  }
+
   if (panning && e.pointerId === panPointerId) {
     e.preventDefault();
     const [sx, sy] = screenPos(e);
@@ -895,6 +1242,8 @@ function endStroke(e) {
     }
     return;
   }
+
+  if (endImageGesture(e)) return;
 
   if (panning && e.pointerId === panPointerId) {
     clearPanGesture();
