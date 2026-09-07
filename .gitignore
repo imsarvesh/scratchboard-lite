@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Local git worktrees
+.worktrees/
+
 # Logs
 logs/
 *.log
