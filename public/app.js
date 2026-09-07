@@ -1,8 +1,16 @@
+import {
+  EXPORT_PAPER,
+  computeContentBounds,
+  fitExportSize,
+  exportFilename,
+} from './export-png.js';
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const statusDot = document.getElementById('statusDot');
 const liveStatus = document.getElementById('liveStatus');
 const clearBtn = document.getElementById('clearBtn');
+const saveBtn = document.getElementById('saveBtn');
 const dock = document.getElementById('dock');
 const dockPosBtn = document.getElementById('dockPosBtn');
 const dockDragHandle = document.getElementById('dockDragHandle');
@@ -716,6 +724,108 @@ function endPinch() {
   updateCursor();
 }
 
+function gatherExportStrokes() {
+  const strokes = strokeHistory.map(cloneStroke);
+  for (const entry of remoteStrokes.values()) {
+    strokes.push(cloneStroke(entry));
+  }
+  if (drawing && localStrokePoints.length) {
+    strokes.push({
+      id: strokeId || 'local-in-progress',
+      tool: currentStrokeTool,
+      color: currentStrokeColor,
+      size: currentStrokeSize,
+      width: currentStrokeWidth,
+      points: localStrokePoints.map((p) => [p[0], p[1]]),
+    });
+  }
+  return strokes;
+}
+
+function drawStrokesOnExportCtx(exportCtx, strokes) {
+  exportCtx.lineCap = 'round';
+  exportCtx.lineJoin = 'round';
+  for (const s of strokes) {
+    const tool = s.tool || 'pen';
+    const color = s.color || DEFAULT_COLOR;
+    const width = s.width ?? DEFAULT_SIZE;
+    const points = s.points || [];
+
+    if (tool === 'eraser') {
+      exportCtx.globalCompositeOperation = 'destination-out';
+      exportCtx.strokeStyle = 'rgba(0,0,0,1)';
+      exportCtx.fillStyle = 'rgba(0,0,0,1)';
+    } else {
+      exportCtx.globalCompositeOperation = 'source-over';
+      exportCtx.strokeStyle = color;
+      exportCtx.fillStyle = color;
+    }
+    exportCtx.lineWidth = width;
+
+    if (points.length < 2) {
+      if (points.length === 1) {
+        exportCtx.beginPath();
+        exportCtx.arc(points[0][0], points[0][1], width / 2, 0, Math.PI * 2);
+        exportCtx.fill();
+      }
+    } else {
+      exportCtx.beginPath();
+      exportCtx.moveTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) {
+        exportCtx.lineTo(points[i][0], points[i][1]);
+      }
+      exportCtx.stroke();
+    }
+    exportCtx.globalCompositeOperation = 'source-over';
+  }
+}
+
+function saveBoardAsPng() {
+  const strokes = gatherExportStrokes();
+  const bounds = computeContentBounds(strokes);
+  if (!bounds) {
+    window.alert('Nothing to save yet — draw something first.');
+    return;
+  }
+
+  const fitted = fitExportSize(bounds.width, bounds.height);
+  const offscreen = document.createElement('canvas');
+  offscreen.width = fitted.width;
+  offscreen.height = fitted.height;
+  const exportCtx = offscreen.getContext('2d');
+  if (!exportCtx) {
+    window.alert('Could not create export canvas.');
+    return;
+  }
+
+  exportCtx.fillStyle = EXPORT_PAPER;
+  exportCtx.fillRect(0, 0, fitted.width, fitted.height);
+  exportCtx.setTransform(
+    fitted.scale,
+    0,
+    0,
+    fitted.scale,
+    -bounds.minX * fitted.scale,
+    -bounds.minY * fitted.scale,
+  );
+  drawStrokesOnExportCtx(exportCtx, strokes);
+
+  offscreen.toBlob((blob) => {
+    if (!blob) {
+      window.alert('Could not create PNG.');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportFilename();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+}
+
 canvas.addEventListener(
   'wheel',
   (e) => {
@@ -943,6 +1053,12 @@ redoBtn?.addEventListener('click', (e) => {
 clearBtn.addEventListener('click', () => {
   if (!window.confirm('Clear the board for everyone?')) return;
   send({ type: 'clear' });
+});
+
+saveBtn?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  saveBoardAsPng();
 });
 
 dockPosBtn?.addEventListener('click', (e) => {
