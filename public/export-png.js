@@ -8,6 +8,8 @@ export const EXPORT_MAX_SIDE = 8192;
  * @returns {{ minX: number, minY: number, width: number, height: number } | null}
  */
 export function computeContentBounds(strokes, padding = EXPORT_PADDING) {
+  if (!Number.isFinite(padding) || padding < 0) return null;
+
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -15,12 +17,21 @@ export function computeContentBounds(strokes, padding = EXPORT_PADDING) {
   let any = false;
 
   for (const stroke of strokes || []) {
-    const half = (stroke.width ?? 0) / 2;
+    if (!stroke) continue;
+    const width = stroke.width ?? 0;
+    if (!Number.isFinite(width) || width < 0) return null;
+    const half = width / 2;
     for (const p of stroke.points || []) {
       if (!Array.isArray(p) || p.length < 2) continue;
       const x = p[0];
       const y = p[1];
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (
+        Math.abs(x) > Number.MAX_SAFE_INTEGER ||
+        Math.abs(y) > Number.MAX_SAFE_INTEGER
+      ) {
+        return null;
+      }
       any = true;
       minX = Math.min(minX, x - half);
       minY = Math.min(minY, y - half);
@@ -31,37 +42,61 @@ export function computeContentBounds(strokes, padding = EXPORT_PADDING) {
 
   if (!any) return null;
 
-  return {
+  const bounds = {
     minX: minX - padding,
     minY: minY - padding,
     width: maxX - minX + padding * 2,
     height: maxY - minY + padding * 2,
   };
+  if (
+    !Object.values(bounds).every(Number.isFinite) ||
+    bounds.width <= 0 ||
+    bounds.height <= 0 ||
+    bounds.width > Number.MAX_SAFE_INTEGER ||
+    bounds.height > Number.MAX_SAFE_INTEGER
+  ) {
+    return null;
+  }
+  return bounds;
 }
 
 /**
  * @param {number} width
  * @param {number} height
  * @param {number} [maxSide]
- * @returns {{ width: number, height: number, scale: number }}
+ * @returns {{ width: number, height: number, scale: number } | null}
  */
 export function fitExportSize(width, height, maxSide = EXPORT_MAX_SIDE) {
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    !Number.isFinite(maxSide) ||
+    width <= 0 ||
+    height <= 0 ||
+    maxSide <= 0 ||
+    width > Number.MAX_SAFE_INTEGER ||
+    height > Number.MAX_SAFE_INTEGER
+  ) {
+    return null;
+  }
   const w = Math.max(1, width);
   const h = Math.max(1, height);
   const longest = Math.max(w, h);
   if (longest <= maxSide) {
-    return {
+    const fitted = {
       width: Math.max(1, Math.round(w)),
       height: Math.max(1, Math.round(h)),
       scale: 1,
     };
+    return Object.values(fitted).every(Number.isFinite) ? fitted : null;
   }
   const scale = maxSide / longest;
-  return {
+  const fitted = {
     width: Math.max(1, Math.round(w * scale)),
     height: Math.max(1, Math.round(h * scale)),
     scale,
   };
+  return Object.values(fitted).every(Number.isFinite) ? fitted : null;
 }
 
 /**
@@ -76,7 +111,7 @@ export function exportFilename(date = new Date()) {
 }
 
 /**
- * Render erasable ink on a transparent layer, then place it over opaque paper.
+ * Render erasable ink on transparency, then place opaque paper behind it.
  *
  * @param {{ minX: number, minY: number }} bounds
  * @param {{ width: number, height: number, scale: number }} fitted
@@ -91,18 +126,13 @@ export function renderExportLayers(
   createCanvas = () => document.createElement('canvas'),
 ) {
   const output = createCanvas();
-  const ink = createCanvas();
-  output.width = ink.width = fitted.width;
-  output.height = ink.height = fitted.height;
+  output.width = fitted.width;
+  output.height = fitted.height;
 
   const outputCtx = output.getContext('2d');
-  const inkCtx = ink.getContext('2d');
-  if (!outputCtx || !inkCtx) return null;
+  if (!outputCtx) return null;
 
-  outputCtx.fillStyle = EXPORT_PAPER;
-  outputCtx.fillRect(0, 0, fitted.width, fitted.height);
-
-  inkCtx.setTransform(
+  outputCtx.setTransform(
     fitted.scale,
     0,
     0,
@@ -110,7 +140,12 @@ export function renderExportLayers(
     -bounds.minX * fitted.scale,
     -bounds.minY * fitted.scale,
   );
-  drawInk(inkCtx);
-  outputCtx.drawImage(ink, 0, 0);
+  drawInk(outputCtx);
+
+  outputCtx.setTransform(1, 0, 0, 1, 0, 0);
+  outputCtx.globalCompositeOperation = 'destination-over';
+  outputCtx.fillStyle = EXPORT_PAPER;
+  outputCtx.fillRect(0, 0, fitted.width, fitted.height);
+  outputCtx.globalCompositeOperation = 'source-over';
   return output;
 }

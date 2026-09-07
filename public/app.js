@@ -784,11 +784,15 @@ function saveBoardAsPng() {
   const strokes = gatherExportStrokes();
   const bounds = computeContentBounds(strokes);
   if (!bounds) {
-    window.alert('Nothing to save yet — draw something first.');
+    window.alert('Nothing usable to save — draw a valid stroke first.');
     return;
   }
 
   const fitted = fitExportSize(bounds.width, bounds.height);
+  if (!fitted) {
+    window.alert('Could not save PNG because the drawing dimensions are invalid.');
+    return;
+  }
   const offscreen = renderExportLayers(bounds, fitted, (inkCtx) => {
     drawStrokesOnExportCtx(inkCtx, strokes);
   });
