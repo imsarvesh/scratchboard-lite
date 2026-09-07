@@ -23,8 +23,6 @@ const saveBtn = document.getElementById('saveBtn');
 const dock = document.getElementById('dock');
 const dockPosBtn = document.getElementById('dockPosBtn');
 const dockDragHandle = document.getElementById('dockDragHandle');
-const installBtn = document.getElementById('installBtn');
-const installDivider = document.querySelector('.dock-install-divider');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
 const penBtn = document.getElementById('penBtn');
@@ -1035,6 +1033,19 @@ function gatherExportStrokes() {
   return strokes;
 }
 
+function gatherExportImages() {
+  return [...boardImages.values()].map(cloneImage);
+}
+
+function drawImagesOnExportCtx(exportCtx, images) {
+  exportCtx.globalCompositeOperation = 'source-over';
+  for (const image of images) {
+    const el = imageElements.get(image.id);
+    if (!el || !el.complete || el.naturalWidth === 0) continue;
+    exportCtx.drawImage(el, image.x, image.y, image.w, image.h);
+  }
+}
+
 function drawStrokesOnExportCtx(exportCtx, strokes) {
   exportCtx.lineCap = 'round';
   exportCtx.lineJoin = 'round';
@@ -1075,9 +1086,10 @@ function drawStrokesOnExportCtx(exportCtx, strokes) {
 
 function saveBoardAsPng() {
   const strokes = gatherExportStrokes();
-  const bounds = computeContentBounds(strokes);
+  const images = gatherExportImages();
+  const bounds = computeContentBounds(strokes, undefined, images);
   if (!bounds) {
-    window.alert('Nothing usable to save — draw a valid stroke first.');
+    window.alert('Nothing usable to save — add a stroke or paste an image first.');
     return;
   }
 
@@ -1087,6 +1099,7 @@ function saveBoardAsPng() {
     return;
   }
   const offscreen = renderExportLayers(bounds, fitted, (inkCtx) => {
+    drawImagesOnExportCtx(inkCtx, images);
     drawStrokesOnExportCtx(inkCtx, strokes);
   });
   if (!offscreen) {
@@ -1426,55 +1439,10 @@ resize();
 connect();
 setupPwa();
 
-function isStandaloneDisplay() {
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.matchMedia('(display-mode: window-controls-overlay)').matches ||
-    // iOS Safari
-    (typeof navigator !== 'undefined' && navigator.standalone === true)
-  );
-}
-
-function setInstallVisible(visible) {
-  if (!installBtn) return;
-  installBtn.hidden = !visible;
-  if (installDivider) installDivider.hidden = !visible;
-}
-
 function setupPwa() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {
       // App still works as a normal page without SW.
     });
   }
-
-  if (isStandaloneDisplay()) {
-    setInstallVisible(false);
-    return;
-  }
-
-  let deferredPrompt = null;
-
-  window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
-    deferredPrompt = event;
-    setInstallVisible(true);
-  });
-
-  window.addEventListener('appinstalled', () => {
-    deferredPrompt = null;
-    setInstallVisible(false);
-  });
-
-  installBtn?.addEventListener('click', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice.catch(() => null);
-    deferredPrompt = null;
-    if (choice?.outcome === 'accepted') {
-      setInstallVisible(false);
-    }
-  });
 }

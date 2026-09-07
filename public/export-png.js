@@ -5,9 +5,14 @@ export const EXPORT_MAX_SIDE = 8192;
 /**
  * @param {{ width: number, points: number[][] }[]} strokes
  * @param {number} [padding]
+ * @param {{ x: number, y: number, w: number, h: number }[]} [images]
  * @returns {{ minX: number, minY: number, width: number, height: number } | null}
  */
-export function computeContentBounds(strokes, padding = EXPORT_PADDING) {
+export function computeContentBounds(
+  strokes,
+  padding = EXPORT_PADDING,
+  images = [],
+) {
   if (!Number.isFinite(padding) || padding < 0) return null;
 
   let minX = Infinity;
@@ -38,6 +43,34 @@ export function computeContentBounds(strokes, padding = EXPORT_PADDING) {
       maxX = Math.max(maxX, x + half);
       maxY = Math.max(maxY, y + half);
     }
+  }
+
+  for (const image of images || []) {
+    if (!image) continue;
+    const { x, y, w, h } = image;
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(w) ||
+      !Number.isFinite(h) ||
+      w <= 0 ||
+      h <= 0
+    ) {
+      continue;
+    }
+    if (
+      Math.abs(x) > Number.MAX_SAFE_INTEGER ||
+      Math.abs(y) > Number.MAX_SAFE_INTEGER ||
+      Math.abs(x + w) > Number.MAX_SAFE_INTEGER ||
+      Math.abs(y + h) > Number.MAX_SAFE_INTEGER
+    ) {
+      return null;
+    }
+    any = true;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
   }
 
   if (!any) return null;

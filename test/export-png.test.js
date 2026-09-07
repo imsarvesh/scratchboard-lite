@@ -22,6 +22,47 @@ describe('export-png helpers', () => {
     assert.equal(computeContentBounds([{ width: 5, points: [] }]), null);
   });
 
+  it('bounds images alone with padding', () => {
+    const bounds = computeContentBounds([], EXPORT_PADDING, [
+      { x: 10, y: 20, w: 100, h: 50 },
+    ]);
+    assert.deepEqual(bounds, {
+      minX: 10 - 48,
+      minY: 20 - 48,
+      width: 100 + 96,
+      height: 50 + 96,
+    });
+  });
+
+  it('unions strokes and images', () => {
+    const bounds = computeContentBounds(
+      [{ width: 2, points: [[0, 0]] }],
+      0,
+      [{ x: 50, y: 80, w: 10, h: 10 }],
+    );
+    // stroke: -1..1; image: 50..60, 80..90
+    assert.deepEqual(bounds, {
+      minX: -1,
+      minY: -1,
+      width: 61,
+      height: 91,
+    });
+  });
+
+  it('ignores invalid images', () => {
+    assert.equal(
+      computeContentBounds([], 0, [{ x: 0, y: 0, w: 0, h: 10 }]),
+      null,
+    );
+    assert.deepEqual(
+      computeContentBounds([], 0, [
+        null,
+        { x: 5, y: 5, w: 10, h: 10 },
+      ]),
+      { minX: 5, minY: 5, width: 10, height: 10 },
+    );
+  });
+
   it('ignores null and undefined stroke entries', () => {
     assert.deepEqual(
       computeContentBounds([null, undefined, { width: 2, points: [[10, 20]] }], 0),

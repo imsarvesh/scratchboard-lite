@@ -13,7 +13,7 @@ npm start
 
 Open [http://localhost:3000](http://localhost:3000) in two browser windows.
 
-On Chromium, an **Install** button appears in the dock when the browser offers installation. On iOS Safari, use Share → Add to Home Screen.
+On Chromium, use the browser’s install affordance if offered. On iOS Safari, use Share → Add to Home Screen.
 
 Optional: regenerate icon PNGs with `node scripts/render-icons.mjs` (also auto-created on server start if missing).
 
