@@ -1,8 +1,8 @@
 import {
-  EXPORT_PAPER,
   computeContentBounds,
   fitExportSize,
   exportFilename,
+  renderExportLayers,
 } from './export-png.js';
 
 const canvas = document.getElementById('board');
@@ -789,26 +789,13 @@ function saveBoardAsPng() {
   }
 
   const fitted = fitExportSize(bounds.width, bounds.height);
-  const offscreen = document.createElement('canvas');
-  offscreen.width = fitted.width;
-  offscreen.height = fitted.height;
-  const exportCtx = offscreen.getContext('2d');
-  if (!exportCtx) {
+  const offscreen = renderExportLayers(bounds, fitted, (inkCtx) => {
+    drawStrokesOnExportCtx(inkCtx, strokes);
+  });
+  if (!offscreen) {
     window.alert('Could not create export canvas.');
     return;
   }
-
-  exportCtx.fillStyle = EXPORT_PAPER;
-  exportCtx.fillRect(0, 0, fitted.width, fitted.height);
-  exportCtx.setTransform(
-    fitted.scale,
-    0,
-    0,
-    fitted.scale,
-    -bounds.minX * fitted.scale,
-    -bounds.minY * fitted.scale,
-  );
-  drawStrokesOnExportCtx(exportCtx, strokes);
 
   offscreen.toBlob((blob) => {
     if (!blob) {
@@ -822,7 +809,7 @@ function saveBoardAsPng() {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, 'image/png');
 }
 

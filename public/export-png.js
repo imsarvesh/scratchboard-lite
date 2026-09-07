@@ -74,3 +74,43 @@ export function exportFilename(date = new Date()) {
   const d = String(date.getDate()).padStart(2, '0');
   return `scratchboard-${y}-${m}-${d}.png`;
 }
+
+/**
+ * Render erasable ink on a transparent layer, then place it over opaque paper.
+ *
+ * @param {{ minX: number, minY: number }} bounds
+ * @param {{ width: number, height: number, scale: number }} fitted
+ * @param {(context: CanvasRenderingContext2D) => void} drawInk
+ * @param {() => HTMLCanvasElement} [createCanvas]
+ * @returns {HTMLCanvasElement | null}
+ */
+export function renderExportLayers(
+  bounds,
+  fitted,
+  drawInk,
+  createCanvas = () => document.createElement('canvas'),
+) {
+  const output = createCanvas();
+  const ink = createCanvas();
+  output.width = ink.width = fitted.width;
+  output.height = ink.height = fitted.height;
+
+  const outputCtx = output.getContext('2d');
+  const inkCtx = ink.getContext('2d');
+  if (!outputCtx || !inkCtx) return null;
+
+  outputCtx.fillStyle = EXPORT_PAPER;
+  outputCtx.fillRect(0, 0, fitted.width, fitted.height);
+
+  inkCtx.setTransform(
+    fitted.scale,
+    0,
+    0,
+    fitted.scale,
+    -bounds.minX * fitted.scale,
+    -bounds.minY * fitted.scale,
+  );
+  drawInk(inkCtx);
+  outputCtx.drawImage(ink, 0, 0);
+  return output;
+}

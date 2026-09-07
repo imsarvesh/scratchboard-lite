@@ -7,6 +7,7 @@ import {
   computeContentBounds,
   fitExportSize,
   exportFilename,
+  renderExportLayers,
 } from '../public/export-png.js';
 
 describe('export-png helpers', () => {
@@ -59,5 +60,51 @@ describe('export-png helpers', () => {
   it('formats local date filename', () => {
     const d = new Date(2026, 8, 7); // Sep 7, 2026 local
     assert.equal(exportFilename(d), 'scratchboard-2026-09-07.png');
+  });
+
+  it('composites erased ink over an opaque paper canvas', () => {
+    const canvases = [];
+    const createCanvas = () => {
+      const operations = [];
+      const context = {
+        operations,
+        fillStyle: '',
+        fillRect(...args) {
+          operations.push(['fillRect', this.fillStyle, ...args]);
+        },
+        setTransform(...args) {
+          operations.push(['setTransform', ...args]);
+        },
+        drawImage(...args) {
+          operations.push(['drawImage', ...args]);
+        },
+      };
+      const canvas = {
+        width: 0,
+        height: 0,
+        context,
+        getContext: () => context,
+      };
+      canvases.push(canvas);
+      return canvas;
+    };
+
+    const output = renderExportLayers(
+      { minX: 10, minY: 20 },
+      { width: 100, height: 50, scale: 2 },
+      (inkCtx) => inkCtx.operations.push(['erase-ink']),
+      createCanvas,
+    );
+
+    assert.equal(canvases.length, 2);
+    assert.equal(output, canvases[0]);
+    assert.deepEqual(canvases[0].context.operations, [
+      ['fillRect', EXPORT_PAPER, 0, 0, 100, 50],
+      ['drawImage', canvases[1], 0, 0],
+    ]);
+    assert.deepEqual(canvases[1].context.operations, [
+      ['setTransform', 2, 0, 0, 2, -20, -40],
+      ['erase-ink'],
+    ]);
   });
 });
