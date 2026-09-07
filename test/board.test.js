@@ -5,7 +5,11 @@ import { Board } from '../board.js';
 describe('Board', () => {
   it('starts empty and init has no strokes', () => {
     const board = new Board();
-    assert.deepEqual(board.getInitMessage(), { type: 'init', strokes: [] });
+    assert.deepEqual(board.getInitMessage(), {
+      type: 'init',
+      strokes: [],
+      images: [],
+    });
   });
 
   it('completes a pen stroke into history', () => {
@@ -223,5 +227,97 @@ describe('Board', () => {
     const board = new Board();
     assert.equal(board.undo(), false);
     assert.equal(board.redo(), false);
+  });
+
+  const sampleImage = {
+    id: 'img1',
+    src: 'data:image/png;base64,abc',
+    x: 10,
+    y: 20,
+    w: 100,
+    h: 80,
+  };
+
+  it('adds an image into history', () => {
+    const board = new Board();
+    assert.equal(board.imageAdd({ ...sampleImage }), true);
+    assert.deepEqual(board.getInitMessage().images, [sampleImage]);
+  });
+
+  it('rejects malformed imageAdd', () => {
+    const board = new Board();
+    assert.equal(board.imageAdd({ ...sampleImage, id: '' }), false);
+    assert.equal(board.imageAdd({ ...sampleImage, src: 'http://x' }), false);
+    assert.equal(board.imageAdd({ ...sampleImage, w: 0 }), false);
+    assert.equal(board.imageAdd({ ...sampleImage, h: -1 }), false);
+    assert.equal(board.imageAdd({ ...sampleImage, x: 'bad' }), false);
+  });
+
+  it('updates image geometry', () => {
+    const board = new Board();
+    board.imageAdd({ ...sampleImage });
+    assert.equal(
+      board.imageUpdate({ id: 'img1', x: 5, y: 6, w: 50, h: 40 }),
+      true,
+    );
+    assert.deepEqual(board.getImages()[0], {
+      ...sampleImage,
+      x: 5,
+      y: 6,
+      w: 50,
+      h: 40,
+    });
+  });
+
+  it('removes an image', () => {
+    const board = new Board();
+    board.imageAdd({ ...sampleImage });
+    assert.equal(board.imageRemove({ id: 'img1' }), true);
+    assert.deepEqual(board.getImages(), []);
+  });
+
+  it('clear empties images and restores them on undo', () => {
+    const board = new Board();
+    board.imageAdd({ ...sampleImage });
+    assert.equal(board.clear(), true);
+    assert.deepEqual(board.getInitMessage().images, []);
+    assert.equal(board.undo(), true);
+    assert.equal(board.getImages().length, 1);
+    assert.equal(board.getImages()[0].id, 'img1');
+  });
+
+  it('undoes and redoes image add', () => {
+    const board = new Board();
+    board.imageAdd({ ...sampleImage });
+    assert.equal(board.undo(), true);
+    assert.deepEqual(board.getImages(), []);
+    assert.equal(board.redo(), true);
+    assert.equal(board.getImages()[0].id, 'img1');
+  });
+
+  it('undoes and redoes image update', () => {
+    const board = new Board();
+    board.imageAdd({ ...sampleImage });
+    board.imageUpdate({ id: 'img1', x: 1, y: 2, w: 30, h: 40 });
+    assert.equal(board.undo(), true);
+    assert.deepEqual(board.getImages()[0], sampleImage);
+    assert.equal(board.redo(), true);
+    assert.equal(board.getImages()[0].w, 30);
+  });
+
+  it('undoes and redoes image remove', () => {
+    const board = new Board();
+    board.imageAdd({ ...sampleImage });
+    board.imageRemove({ id: 'img1' });
+    assert.equal(board.undo(), true);
+    assert.equal(board.getImages().length, 1);
+    assert.equal(board.redo(), true);
+    assert.deepEqual(board.getImages(), []);
+  });
+
+  it('rejects duplicate imageAdd id', () => {
+    const board = new Board();
+    assert.equal(board.imageAdd({ ...sampleImage }), true);
+    assert.equal(board.imageAdd({ ...sampleImage }), false);
   });
 });
